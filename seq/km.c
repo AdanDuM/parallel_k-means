@@ -31,7 +31,7 @@ int npoints;
 int dimension;
 int ncentroids;
 float mindistance;
-int seed;
+int seed;                     //!< semente utilizada para gerar nros
 vector_t *data, *centroids;
 int *map;
 int *dirty;
