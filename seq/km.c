@@ -39,9 +39,11 @@ int dimension;
 int ncentroids;               //!< nro de particoes
 float mindistance;
 int seed;                     //!< semente utilizada para gerar nros
+// data possui os pontos
+// centroids possui o centro da particao
 vector_t *data, *centroids;
 int *map;                     //!< associa cada ponto a uma particao
-int *dirty;
+int *dirty;                   //!< define se particao esta suja ou limpa
 int too_far;
 int has_changed;
 // fim declarao de vars
