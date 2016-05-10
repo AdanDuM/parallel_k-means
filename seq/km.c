@@ -3,6 +3,9 @@
 #include <string.h>
 #include <math.h>
 
+/*!
+ *  começo geracao nros aleatorios (todos os pontos)
+ */
 #define RANDNUM_W 521288629;
 #define RANDNUM_Z 362436069;
 
@@ -24,21 +27,29 @@ unsigned int randnum(void) {
   u = (randum_z << 16) + randum_w;
   return (u);
 }
+// fim geracao nros aleatorios (todos os pontos)
 
+/*!
+ *  comeco declaracao de vars
+ */
 typedef float* vector_t;
 
 int npoints;
 int dimension;
-int ncentroids;
+int ncentroids;               //!< nro de particoes
 float mindistance;
 int seed;                     //!< semente utilizada para gerar nros
 vector_t *data, *centroids;
-int *map;
+int *map;                     //!< associa cada ponto a uma particao
 int *dirty;
 int too_far;
 int has_changed;
+// fim declarao de vars
 
-float v_distance(vector_t a, vector_t b) {
+/*!
+ *  comeco calculo kmeans
+ */
+float v_distance(vector_t a, vector_t b) { //!< calcula dist. entre dois pontos
   int i;
   float distance = 0;
   for (i = 0; i < dimension; i++)
@@ -51,20 +62,21 @@ static void populate(void) {
   float tmp;
   float distance;
   too_far = 0;
+  // associa cada ponto a cada centro de particao
   for (i = 0; i < npoints; i++) {
     distance = v_distance(centroids[map[i]], data[i]);
-    /* Look for closest cluster. */
     for (j = 0; j < ncentroids; j++) {
-      /* Point is in this cluster. */
+      // so executa se o ponto nao for daquela particao
       if (j == map[i]) continue;
       tmp = v_distance(centroids[j], data[i]);
+      // se uma distancia melhor, entao muda particao do ponto
       if (tmp < distance) {
         map[i] = j;
         distance = tmp;
         dirty[j] = 1;
       }
     }
-    /* Cluster is too far away. */
+    // verifica se clusterizacao aceitavel
     if (distance > mindistance)
       too_far = 1;
   }
@@ -74,11 +86,12 @@ static void compute_centroids(void) {
   int i, j, k;
   int population;
   has_changed = 0;
-  /* Compute means. */
   for (i = 0; i < ncentroids; i++) {
+    // so executa se particao estiver suja
     if (!dirty[i]) continue;
+    // zera centro das particoes
     memset(centroids[i], 0, sizeof(float) * dimension);
-    /* Compute cluster's mean. */
+    // calcula centro da particao
     population = 0;
     for (j = 0; j < npoints; j++) {
       if (map[j] != i) continue;
@@ -92,7 +105,7 @@ static void compute_centroids(void) {
     }
     has_changed = 1;
   }
-  memset(dirty, 0, ncentroids * sizeof(int));
+  memset(dirty, 0, ncentroids * sizeof(int)); //!< todas particoes limpas
 }
 
 int* kmeans(void) {
@@ -100,6 +113,7 @@ int* kmeans(void) {
   too_far = 0;
   has_changed = 0;
 
+  // aloca memoria
   if (!(map  = calloc(npoints, sizeof(int))))
     exit (1);
   if (!(dirty = malloc(ncentroids*sizeof(int))))
@@ -110,24 +124,25 @@ int* kmeans(void) {
   for (i = 0; i < ncentroids; i++)
     centroids[i] = malloc(sizeof(float) * dimension);
   for (i = 0; i < npoints; i++)
-    map[i] = -1;
+    map[i] = -1;                      //!< todos pontos nao mapeados
   for (i = 0; i < ncentroids; i++) {
-    dirty[i] = 1;
+    dirty[i] = 1;                     //!< particoes estao "sujas"
     j = randnum() % npoints;
     for (k = 0; k < dimension; k++)
-      centroids[i][k] = data[j][k];
+      centroids[i][k] = data[j][k];   //!< def pontos centros de particoes
     map[j] = i;
   }
-  /* Map unmapped data points. */
-  for (i = 0; i < npoints; i++)
+
+  for (i = 0; i < npoints; i++)       //!< pontos nao mapeados recebem particao
     if (map[i] < 0)
       map[i] = randnum() % ncentroids;
 
-  do { /* Cluster data. */
+  do { // realiza kmeans
     populate();
     compute_centroids();
   } while (too_far && has_changed);
 
+  // libera memoria
   for (i = 0; i < ncentroids; i++)
     free(centroids[i]);
   free(centroids);
@@ -135,10 +150,12 @@ int* kmeans(void) {
 
   return map;
 }
+// fim calculo kmeans
 
 int main(int argc, char **argv) {
   int i, j, tmp;
 
+  // trabalha com args
   if (argc != 6) {
     printf("Usage: npoints dimension ncentroids mindistance seed\n");
     exit (1);
@@ -150,6 +167,7 @@ int main(int argc, char **argv) {
   mindistance = atoi(argv[4]);
   seed = atoi(argv[5]);
 
+  // gera matriz de dados com pontos
   srandnum(seed);
 
   if (!(data = malloc(npoints*sizeof(vector_t))))
@@ -161,8 +179,10 @@ int main(int argc, char **argv) {
       data[i][j] = randnum() & 0xffff;
   }
 
+  // realiza o kmeans
   map = kmeans();
 
+  // printa resultado na tela
   for (i = 0; i < ncentroids; i++) {
     printf("\nPartition %d:\n", i);
     for (j = 0; j < npoints; j++)
@@ -171,6 +191,7 @@ int main(int argc, char **argv) {
   }
   printf("\n");
 
+  // limpa memoria
   free(map);
   for (i = 0; i < npoints; i++)
     free(data[i]);
