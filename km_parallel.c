@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <pthread.h>
+#include <stdint.h>
 
 /*!
  *  começo geracao nros aleatorios (todos os pontos)
@@ -49,7 +50,10 @@ int *map;                     //!< associa cada ponto a uma particao
 int *dirty;                   //!< define se particao esta suja ou limpa
 int too_far;
 int has_changed;
-int threads;
+int nro_threads;
+int pnts_in_thrds;
+pthread_mutex_t mutex_compute_centroids;
+pthread_mutex_t mutex_parcial_kmeans;
 // fim declarao de vars
 
 /*!
@@ -63,13 +67,13 @@ float v_distance(vector_t a, vector_t b) { //!< calcula dist. entre dois pontos
   return sqrt(distance);
 }
 
-static void populate(void) {
+static void populate(int arg_thread) {
   int i, j;
   float tmp;
   float distance;
   too_far = 0;
   // associa cada ponto a cada centro de particao
-  for (i = 0; i < npoints; i++) {
+  for (i = arg_thread * pnts_in_thrds; i < pnts_in_thrds; i++) {
     distance = v_distance(centroids[map[i]], data[i]);
     for (j = 0; j < ncentroids; j++) {
       // so executa se o ponto nao for daquela particao
@@ -129,31 +133,37 @@ void startMemKmeans(void) {
     centroids[i] = malloc(sizeof(float) * dimension);
 }
 
-int* kmeans(void) {
+void *kmeans(void *arg) {
   int i, j, k;
+  int arg_thread = (int) (intptr_t) arg;
   too_far = 0;
   has_changed = 0;
 
-  for (i = 0; i < npoints; i++)
+  for (i = arg_thread * pnts_in_thrds; i < pnts_in_thrds; i++)
     map[i] = -1;                      //!< todos pontos nao mapeados
-  for (i = 0; i < ncentroids; i++) {
-    dirty[i] = 1;                     //!< particoes estao "sujas"
-    j = randnum() % npoints;
-    for (k = 0; k < dimension; k++)
-      centroids[i][k] = data[j][k];   //!< def pontos centros de particoes
-    map[j] = i;
-  }
 
-  for (i = 0; i < npoints; i++)       //!< pontos nao mapeados recebem particao
+  pthread_mutex_lock(&mutex_parcial_kmeans);
+    for (i = 0; i < ncentroids; i++) {
+      dirty[i] = 1;                     //!< particoes estao "sujas"
+      j = randnum() % npoints;
+      for (k = 0; k < dimension; k++)
+        centroids[i][k] = data[j][k];   //!< def pontos centros de particoes
+      map[j] = i;
+    }
+  pthread_mutex_unlock(&mutex_parcial_kmeans);
+
+  // pontos nao mapeados recebem particao
+  for (i = arg_thread * pnts_in_thrds; i < pnts_in_thrds; i++)
     if (map[i] < 0)
       map[i] = randnum() % ncentroids;
 
   do { // realiza kmeans
-    populate();
-    compute_centroids();
+    populate(arg_thread);
+    pthread_mutex_lock(&mutex_compute_centroids);
+      compute_centroids();
+    pthread_mutex_unlock(&mutex_compute_centroids);
   } while (too_far && has_changed);
 
-  return map;
 }
 // fim calculo kmeans
 
@@ -181,7 +191,10 @@ int main(int argc, char **argv) {
   ncentroids = atoi(argv[3]);
   mindistance = atoi(argv[4]);
   seed = atoi(argv[5]);
-  threads = atoi(argv[6]);
+  nro_threads = atoi(argv[6]);
+
+  pthread_t thread[nro_threads];
+  pnts_in_thrds = npoints / nro_threads;
 
   // gera matriz de dados com pontos
   srandnum(seed);
@@ -196,9 +209,21 @@ int main(int argc, char **argv) {
   }
 
   // realiza o kmeans
+  pthread_mutex_init(&mutex_parcial_kmeans, NULL);
+  pthread_mutex_init(&mutex_compute_centroids, NULL);
+
   startMemKmeans();
-  map = kmeans();
+
+  for (i = 0; i < nro_threads; i++)
+    pthread_create(&thread[i], NULL, kmeans, (void *) (intptr_t) (i + 1));
+
+  for (i = 0; i < nro_threads; i++)
+    pthread_join(thread[i], NULL);
+
   finishMemKmeans();
+
+  pthread_mutex_destroy(&mutex_parcial_kmeans);
+  pthread_mutex_destroy(&mutex_compute_centroids);
 
   // printa resultado na tela
   for (i = 0; i < ncentroids; i++) {
