@@ -1,6 +1,10 @@
 questionar professor
 
 ordem
-    - o que pode ser mudado? pesquiso na net?
-    - implementar paralelo
+    - usar número de threads adequados
+    - criar
+    - join
+    - usar numero da criação para computar partes dos pontos no populate
+    - colocar semáforo
+    - precisa matar antes de limpar memória?
 

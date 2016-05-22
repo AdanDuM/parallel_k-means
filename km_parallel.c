@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <pthread.h>
 
 /*!
  *  começo geracao nros aleatorios (todos os pontos)
@@ -111,10 +114,8 @@ static void compute_centroids(void) {
   memset(dirty, 0, ncentroids * sizeof(int)); //!< todas particoes limpas
 }
 
-int* kmeans(void) {
-  int i, j, k;
-  too_far = 0;
-  has_changed = 0;
+void startMemKmeans(void) {
+  int i;
 
   // aloca memoria
   if (!(map  = calloc(npoints, sizeof(int))))
@@ -126,6 +127,13 @@ int* kmeans(void) {
 
   for (i = 0; i < ncentroids; i++)
     centroids[i] = malloc(sizeof(float) * dimension);
+}
+
+int* kmeans(void) {
+  int i, j, k;
+  too_far = 0;
+  has_changed = 0;
+
   for (i = 0; i < npoints; i++)
     map[i] = -1;                      //!< todos pontos nao mapeados
   for (i = 0; i < ncentroids; i++) {
@@ -145,15 +153,19 @@ int* kmeans(void) {
     compute_centroids();
   } while (too_far && has_changed);
 
+  return map;
+}
+// fim calculo kmeans
+
+void finishMemKmeans(void) {
+  int i;
+
   // libera memoria
   for (i = 0; i < ncentroids; i++)
     free(centroids[i]);
   free(centroids);
   free(dirty);
-
-  return map;
 }
-// fim calculo kmeans
 
 int main(int argc, char **argv) {
   int i, j, tmp;
@@ -184,7 +196,9 @@ int main(int argc, char **argv) {
   }
 
   // realiza o kmeans
+  startMemKmeans();
   map = kmeans();
+  finishMemKmeans();
 
   // printa resultado na tela
   for (i = 0; i < ncentroids; i++) {
