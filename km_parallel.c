@@ -47,8 +47,6 @@ int *dirty;
 int too_far;
 int has_changed;
 int nro_threads;
-int pnts_in_thrds;
-int pnts_in_cntrds;
 //fim declarao das vars globais
 //-----------------------------------------------------------------------------
 //calcula distancia entre dois pontos
@@ -68,9 +66,10 @@ static void *populate(void *arg) {
     float distance;
 
     int arg_thread = (int) (intptr_t) arg;
-    int baseCalc = arg_thread * pnts_in_thrds;
+    int baseCalc = arg_thread * npoints / nro_threads;
+    int finalCalc = (arg_thread + 1) * npoints / nro_threads;
 
-    for (i = baseCalc ; i < baseCalc + pnts_in_thrds; i++) {
+    for (i = baseCalc ; i < finalCalc; i++) {
         distance = v_distance(centroids[map[i]], data[i]);
         /* Look for closest cluster. */
         for (j = 0; j < ncentroids; j++) {
@@ -111,9 +110,10 @@ static void *compute_centroids(void *arg) {
     int population;
 
     int arg_thread = (int) (intptr_t) arg;
-    int baseCalc = arg_thread * pnts_in_cntrds;
+    int baseCalc = arg_thread * ncentroids / nro_threads;
+    int finalCalc = (arg_thread + 1) * ncentroids / nro_threads;
 
-    for (i = baseCalc; i < baseCalc + pnts_in_cntrds; i++) {
+    for (i = baseCalc; i < finalCalc; i++) {
         if (!dirty[i]) continue;
         memset(centroids[i], 0, sizeof(float) * dimension);
         population = 0;
@@ -205,9 +205,6 @@ int main(int argc, char **argv) {
     mindistance = atoi(argv[4]);
     seed = atoi(argv[5]);
     nro_threads = atoi(argv[6]);
-
-    pnts_in_thrds = npoints / nro_threads;
-    pnts_in_cntrds = ncentroids / nro_threads;
 
     srandnum(seed);
 
