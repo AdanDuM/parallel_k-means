@@ -132,17 +132,16 @@ static void *compute_centroids(void *arg) {
 }
 
 static void computeCentroidsParalelizado(void){
-    has_changed = 0; //has_changed foi trazido pr cá
+    has_changed = 0;
     pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * nro_threads);
     int i;
     for (i = 0; i < nro_threads; i++)
-        pthread_create(&threads[i], NULL, compute_centroids,  (void *) (intptr_t) (i));
+        pthread_create(&threads[i], NULL, compute_centroids, (void *) (intptr_t) (i));
 
     for (i = 0; i < nro_threads; i++)
         pthread_join(threads[i], NULL);
 
-    memset(dirty, 0, ncentroids * sizeof(int)); //memset foi trazido para cá
-    //para executar só uma vez
+    memset(dirty, 0, ncentroids * sizeof(int));
     free(threads);
 }
 //fim calcula centros das particoes
@@ -150,7 +149,7 @@ static void computeCentroidsParalelizado(void){
 //funcao principal kmeans
 int *kmeans(void) {
     int i, j, k;
-    too_far = 0;  //too_far mudado de lugar para executar 1 vez
+    too_far = 0;
     has_changed = 0;
 
     if (!(map  = calloc(npoints, sizeof(int))))
