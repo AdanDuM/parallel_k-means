@@ -1,15 +1,14 @@
-tenho que ter as seguintes respostas:
-- porque usa intptr_t?
-- porque populate virou uma função quer retorna um ponteiro?
-
-algumas mudanças que inicialmente não parecem ser tão importantes:
-- var global com o número de threads
-- número de threads é inserida pela linha de comando
-
-alguns comentários:
-- só paralelizamos o que consideramos principal, deixamos de paralelizar:
+comentários:
+- há uma var global com o número de threads
+- número de threads é inserido pela linha de comando
+- só paralelizamos o que consideramos principal, poderíamos paralelizar:
     - for que gera o data no main
     - for do kmeans que deixa todos pontos não mapeados
     - for do kmeans que deixa partições sujas e define os seus centros
     - for do kmeans que mapeia pontos não mapeados
-- no while do kmeans, cada chamada de *Paralelizado cria threads, da join e libera. Fizemos dessa forma por ser mais fácil e
+- no while do kmeans, cada chamada de *Paralelizado cria threads, da join e libera. Fizemos dessa forma porque acreditamos que essa seria a maneira mais fácil e segura de realizar a paralelização específica dos cálculos. Pensamos primeiro em fazer uma paralelização de tudo, mas como consideramos a computação pesada a parte do populate e compute_centroids, focamos então em deixar esses códigos paralelos
+- uma melhoria que poderia ser estudada para implementação, acredito ser, a retirada da criação, join e liberação de threads a cada chamada de *Paralelizado em cada iteração do laço do {...} while na função kmeans. Talvez fazer isso executar menos vezes, já que da forma que está atualmente o processo se repete bastante
+- too_far saiu do populate e foi pro populateParalelizado por causa que se ficasse lá em uma execução paralela, poderia acontecer o problema dele ser setado como 1 e na próxima execução ser setado para 0. Isso tudo em um mesmo laço do do {...} while. Mesma ideia serve para o has_changed do compute_centroids
+- utiliza intptr_t para tirar aletar do compilador sobre conversão de inteiro para void pointer, já que intptr_t é um tipo de dado inteiro capaz de suportar um ponteiro
+- populate e compute_centroids passaram a retornar ponteiros para poderem ser chamadas na criação da threads
+- cálculo de base e de final não pode ter precedência explícita com () para conseguir realizar arredondamentos corretos e assim pegar toda a faixa de valores
