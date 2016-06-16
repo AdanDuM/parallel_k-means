@@ -126,7 +126,7 @@ static void compute_centroids(void) {
 //-----------------------------------------------------------------------------
 //funcao principal kmeans
 int* kmeans(void) {
-  int i, j, k;
+  int i, j, k, l;
   too_far = 0;
   has_changed = 0;
 
@@ -159,15 +159,38 @@ int* kmeans(void) {
     if (map[i] < 0)
       map[i] = randnum() % ncentroids;
 
-  do { // realiza kmeans
+  do {
     populate();
-    // MPI_Barrier(MPI_COMM_WORLD);
-    //!< PRECISA TODOS EXECUTAREM JUNTOS O compute_centroids
+    MPI_Barrier(MPI_COMM_WORLD);
     compute_centroids();
-    // MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
   } while (too_far && has_changed);
 
-  //!< MESTRE PRECISA TER A UNIÂO DE TODOS OS MAPS NO FINAL
+  if (rank != 0) {
+    MPI_Send(&map, npoints, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    MPI_Send(&rank, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+  } else {
+    int *map_tmp;
+    int rank_tmp;
+
+    if (!(map_tmp  = calloc(npoints, sizeof(int)))) {
+      MPI_Finalize();
+      exit (1);
+    }
+
+    for (i = 0; i < size-1; i++) {
+      MPI_Recv(&map_tmp, npoints, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&rank_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+      int baseCalc = rank_tmp * npoints / size;
+      int finalCalc = (rank_tmp + 1) * npoints / size;
+
+      for (l = baseCalc; l < finalCalc; l++)
+        map[l] = map_tmp[l];
+    }
+
+    free(map_tmp);
+  }
 
   for (i = 0; i < ncentroids; i++)
     free(centroids[i]);
