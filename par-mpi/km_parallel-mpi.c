@@ -1,14 +1,16 @@
+// kmeans paralelizado com mpi desenvolvido por lucas joao e wesley mayk - 2016
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <mpi.h>
 
-/*!
- *  começo geracao nros aleatorios (todos os pontos)
- */
 #define RANDNUM_W 521288629;
 #define RANDNUM_Z 362436069;
+
+//-----------------------------------------------------------------------------
+//geracao de nros aleatorios
 
 unsigned int randum_w = RANDNUM_W;
 unsigned int randum_z = RANDNUM_Z;
@@ -28,20 +30,17 @@ unsigned int randnum(void) {
   u = (randum_z << 16) + randum_w;
   return (u);
 }
-// fim geracao nros aleatorios (todos os pontos)
-
-/*!
- *  comeco declaracao de vars
- */
+//fim geracao de nros aleatorios
+//-----------------------------------------------------------------------------
+//declarao das vars globais
 typedef float* vector_t;
-
 int npoints;
 int dimension;
 int ncentroids;               //!< nro de particoes
 float mindistance;
 int seed;                     //!< semente utilizada para gerar nros
-// data possui os pontos
-// centroids possui o centro da particao
+/* data possui os pontos */
+/* centroids possui o centro da particao */
 vector_t *data, *centroids;
 int *map;                     //!< associa cada ponto a uma particao
 int *dirty;                   //!< define se particao esta suja ou limpa
@@ -49,19 +48,19 @@ int too_far;
 int has_changed;
 int size;
 int rank;
-// fim declarao de vars
-
-/*!
- *  comeco calculo kmeans
- */
-float v_distance(vector_t a, vector_t b) { //!< calcula dist. entre dois pontos
+//fim declarao das vars globais
+//-----------------------------------------------------------------------------
+//calcula distancia entre dois pontos
+float v_distance(vector_t a, vector_t b) {
   int i;
   float distance = 0;
   for (i = 0; i < dimension; i++)
     distance +=  pow(a[i] - b[i], 2);
   return sqrt(distance);
 }
-
+//fim calcula distancia entre dois pontos
+//-----------------------------------------------------------------------------
+//popula as particoes
 static void populate(void) {
   int i, j;
   float tmp;
@@ -71,26 +70,28 @@ static void populate(void) {
   int baseCalc = rank * npoints / size;
   int finalCalc = (rank + 1) * npoints / size;
 
-  // associa cada ponto a cada centro de particao
+  /* associa cada ponto a cada centro de particao */
   for (i = baseCalc; i < finalCalc; i++) {
     distance = v_distance(centroids[map[i]], data[i]);
     for (j = 0; j < ncentroids; j++) {
-      // so executa se o ponto nao for daquela particao
+      /* so executa se o ponto nao for daquela particao */
       if (j == map[i]) continue;
       tmp = v_distance(centroids[j], data[i]);
-      // se uma distancia melhor, entao muda particao do ponto
+      /* se uma distancia melhor, entao muda particao do ponto */
       if (tmp < distance) {
         map[i] = j;
         distance = tmp;
         dirty[j] = 1;
       }
     }
-    // verifica se clusterizacao aceitavel
+    /* verifica se clusterizacao aceitavel */
     if (distance > mindistance)
       too_far = 1; //!< too_far PRECISA SER ENVIADO
   }
 }
-
+//fim popula as particoes
+//-----------------------------------------------------------------------------
+//calcula centros das particoes
 static void compute_centroids(void) {
   int i, j, k;
   int population;
@@ -100,11 +101,11 @@ static void compute_centroids(void) {
   int finalCalc = (rank + 1) * npoints / size;
 
   for (i = 0; i < ncentroids; i++) {
-    // so executa se particao estiver suja
+    /* so executa se particao estiver suja */
     if (!dirty[i]) continue;
-    // zera centro das particoes
+    /* zera centro das particoes */
     memset(centroids[i], 0, sizeof(float) * dimension);
-    // calcula centro da particao
+    /* calcula centro da particao */
     population = 0;
     for (j = baseCalc; j < finalCalc; j++) {
       if (map[j] != i) continue;
@@ -118,15 +119,17 @@ static void compute_centroids(void) {
     }
     has_changed = 1; //!< has_changed PRECISA SER ENVIADO
   }
-  memset(dirty, 0, ncentroids * sizeof(int)); //!< todas particoes limpas
+  /* todas particoes limpas */
+  memset(dirty, 0, ncentroids * sizeof(int));
 }
-
+//fim calcula centros das particoes
+//-----------------------------------------------------------------------------
+//funcao principal kmeans
 int* kmeans(void) {
   int i, j, k;
   too_far = 0;
   has_changed = 0;
 
-  // aloca memoria
   if (!(map  = calloc(npoints, sizeof(int)))) {
     MPI_Finalize();
     exit (1);
@@ -166,7 +169,6 @@ int* kmeans(void) {
 
   //!< MESTRE PRECISA TER A UNIÂO DE TODOS OS MAPS NO FINAL
 
-  // libera memoria
   for (i = 0; i < ncentroids; i++)
     free(centroids[i]);
   free(centroids);
@@ -174,8 +176,9 @@ int* kmeans(void) {
 
   return map;
 }
-// fim calculo kmeans
-
+//fim funcao principal kmeans
+//-----------------------------------------------------------------------------
+//main
 int main(int argc, char **argv) {
   int i, j, tmp;
 
@@ -198,7 +201,6 @@ int main(int argc, char **argv) {
   mindistance = atoi(argv[4]);
   seed = atoi(argv[5]);
 
-  // gera matriz de dados com pontos
   srandnum(seed);
 
   if (!(data = malloc(npoints*sizeof(vector_t)))) {
@@ -212,10 +214,8 @@ int main(int argc, char **argv) {
       data[i][j] = randnum() & 0xffff;
   }
 
-  // realiza o kmeans
   map = kmeans();
 
-  // printa resultado na tela
   if (rank == 0) {
     for (i = 0; i < ncentroids; i++) {
       printf("\nPartition %d:\n", i);
@@ -226,7 +226,6 @@ int main(int argc, char **argv) {
     printf("\n");
   }
 
-  // limpa memoria
   free(map);
   for (i = 0; i < npoints; i++)
     free(data[i]);
@@ -235,3 +234,5 @@ int main(int argc, char **argv) {
   MPI_Finalize();
   return (0);
 }
+//fim main
+//-----------------------------------------------------------------------------
