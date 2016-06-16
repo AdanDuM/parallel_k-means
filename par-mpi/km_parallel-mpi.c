@@ -48,6 +48,7 @@ int too_far;
 int has_changed;
 int size;
 int rank;
+int control;
 //fim declarao das vars globais
 //-----------------------------------------------------------------------------
 //calcula distancia entre dois pontos
@@ -86,7 +87,7 @@ static void populate(void) {
     }
     /* verifica se clusterizacao aceitavel */
     if (distance > mindistance)
-      too_far = 1; //!< too_far PRECISA SER ENVIADO
+      too_far = 1;
   }
 }
 //fim popula as particoes
@@ -117,7 +118,7 @@ static void compute_centroids(void) {
       for (k = 0; k < dimension; k++)
         centroids[i][k] *= 1.0/population; // centroids PRECISA SER ENVIADO
     }
-    has_changed = 1; //!< has_changed PRECISA SER ENVIADO
+    has_changed = 1;
   }
   /* todas particoes limpas */
   memset(dirty, 0, ncentroids * sizeof(int));
@@ -163,8 +164,28 @@ int* kmeans(void) {
     populate();
     MPI_Barrier(MPI_COMM_WORLD);
     compute_centroids();
+
+    control = 0;
+    if (rank != 0) {
+      MPI_Send(&too_far, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(&has_changed, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    } else {
+      int too_far_tmp;
+      int has_changed_tmp;
+
+      for (i = 0; i < size-1; i++) {
+        MPI_Recv(&too_far_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&has_changed_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        if ((too_far_tmp && has_changed_tmp) || (too_far && has_changed))
+          control = 1;
+      }
+    }
+
+    MPI_Bcast(&control, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
-  } while (too_far && has_changed);
+
+  } while (control);
 
   if (rank != 0) {
     MPI_Send(&map, npoints, MPI_INT, 0, 0, MPI_COMM_WORLD);
