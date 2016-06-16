@@ -47,6 +47,8 @@ int *map;                     //!< associa cada ponto a uma particao
 int *dirty;                   //!< define se particao esta suja ou limpa
 int too_far;
 int has_changed;
+int size;
+int rank;
 // fim declarao de vars
 
 /*!
@@ -65,8 +67,12 @@ static void populate(void) {
   float tmp;
   float distance;
   too_far = 0;
+
+  int baseCalc = rank * npoints / size;
+  int finalCalc = (rank + 1) * npoints / size;
+
   // associa cada ponto a cada centro de particao
-  for (i = 0; i < npoints; i++) {
+  for (i = baseCalc; i < finalCalc; i++) {
     distance = v_distance(centroids[map[i]], data[i]);
     for (j = 0; j < ncentroids; j++) {
       // so executa se o ponto nao for daquela particao
@@ -81,7 +87,7 @@ static void populate(void) {
     }
     // verifica se clusterizacao aceitavel
     if (distance > mindistance)
-      too_far = 1;
+      too_far = 1; //!< too_far PRECISA SER ENVIADO
   }
 }
 
@@ -89,6 +95,10 @@ static void compute_centroids(void) {
   int i, j, k;
   int population;
   has_changed = 0;
+
+  int baseCalc = rank * npoints / size;
+  int finalCalc = (rank + 1) * npoints / size;
+
   for (i = 0; i < ncentroids; i++) {
     // so executa se particao estiver suja
     if (!dirty[i]) continue;
@@ -96,7 +106,7 @@ static void compute_centroids(void) {
     memset(centroids[i], 0, sizeof(float) * dimension);
     // calcula centro da particao
     population = 0;
-    for (j = 0; j < npoints; j++) {
+    for (j = baseCalc; j < finalCalc; j++) {
       if (map[j] != i) continue;
       for (k = 0; k < dimension; k++)
         centroids[i][k] += data[j][k];
@@ -104,9 +114,9 @@ static void compute_centroids(void) {
     }
     if (population > 1) {
       for (k = 0; k < dimension; k++)
-        centroids[i][k] *= 1.0/population;
+        centroids[i][k] *= 1.0/population; // centroids PRECISA SER ENVIADO
     }
-    has_changed = 1;
+    has_changed = 1; //!< has_changed PRECISA SER ENVIADO
   }
   memset(dirty, 0, ncentroids * sizeof(int)); //!< todas particoes limpas
 }
@@ -117,12 +127,18 @@ int* kmeans(void) {
   has_changed = 0;
 
   // aloca memoria
-  if (!(map  = calloc(npoints, sizeof(int))))
+  if (!(map  = calloc(npoints, sizeof(int)))) {
+    MPI_Finalize();
     exit (1);
-  if (!(dirty = malloc(ncentroids*sizeof(int))))
+  }
+  if (!(dirty = malloc(ncentroids*sizeof(int)))) {
+    MPI_Finalize();
     exit (1);
-  if (!(centroids = malloc(ncentroids*sizeof(vector_t))))
+  }
+  if (!(centroids = malloc(ncentroids*sizeof(vector_t)))) {
+    MPI_Finalize();
     exit (1);
+  }
 
   for (i = 0; i < ncentroids; i++)
     centroids[i] = malloc(sizeof(float) * dimension);
@@ -143,9 +159,12 @@ int* kmeans(void) {
   do { // realiza kmeans
     populate();
     // MPI_Barrier(MPI_COMM_WORLD);
+    //!< PRECISA TODOS EXECUTAREM JUNTOS O compute_centroids
     compute_centroids();
     // MPI_Barrier(MPI_COMM_WORLD);
   } while (too_far && has_changed);
+
+  //!< MESTRE PRECISA TER A UNIÂO DE TODOS OS MAPS NO FINAL
 
   // libera memoria
   for (i = 0; i < ncentroids; i++)
@@ -158,7 +177,7 @@ int* kmeans(void) {
 // fim calculo kmeans
 
 int main(int argc, char **argv) {
-  int i, j, tmp, size, rank;
+  int i, j, tmp;
 
   MPI_Init(&argc, &argv);
 
@@ -169,6 +188,7 @@ int main(int argc, char **argv) {
   if (argc != 6) {
     if (rank == 0)
       printf("Usage: npoints dimension ncentroids mindistance seed\n");
+    MPI_Finalize();
     exit(1);
   }
 
@@ -181,8 +201,10 @@ int main(int argc, char **argv) {
   // gera matriz de dados com pontos
   srandnum(seed);
 
-  if (!(data = malloc(npoints*sizeof(vector_t))))
+  if (!(data = malloc(npoints*sizeof(vector_t)))) {
+    MPI_Finalize();
     exit(1);
+  }
 
   for (i = 0; i < npoints; i++) {
     data[i] = malloc(sizeof(float) * dimension);
@@ -210,5 +232,6 @@ int main(int argc, char **argv) {
     free(data[i]);
   free(data);
 
+  MPI_Finalize();
   return (0);
 }
