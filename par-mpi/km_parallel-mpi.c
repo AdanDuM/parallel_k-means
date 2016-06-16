@@ -160,12 +160,18 @@ int* kmeans(void) {
     if (map[i] < 0)
       map[i] = randnum() % ncentroids;
 
+  control = 0;
   do {
+    if (control == 1 && has_changed == 1 && rank != 0) {
+      //!< ENVIA CENTROIDS ATUALIZADO!
+    } else if (rank == 0) {
+      //!< RECEBE CENTROIDS, SOMA TUDO E ATUALIZA TODO MUNDO COM ELE
+    }
+
     populate();
     MPI_Barrier(MPI_COMM_WORLD);
     compute_centroids();
 
-    control = 0;
     if (rank != 0) {
       MPI_Send(&too_far, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
       MPI_Send(&has_changed, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
