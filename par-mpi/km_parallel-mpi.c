@@ -41,14 +41,16 @@ float mindistance;
 int seed;                     //!< semente utilizada para gerar nros
 /* data possui os pontos */
 /* centroids possui o centro da particao */
-vector_t *data, *centroids;
-int *map;                     //!< associa cada ponto a uma particao
-int *dirty;                   //!< define se particao esta suja ou limpa
-int too_far;
+vector_t *data, *centroids, *centroids_tmp;
+int *map, *map_tmp;           //!< associa cada ponto a uma particao
+int *dirty, *dirty_tmp;       //!< define se particao esta suja ou limpa
+int too_far, too_far_tmp;
 int has_changed;
 int size;
 int rank;
-int control;
+int baseCalc;
+int finalCalc;
+
 //fim declarao das vars globais
 //-----------------------------------------------------------------------------
 //calcula distancia entre dois pontos
@@ -67,9 +69,6 @@ static void populate(void) {
   float tmp;
   float distance;
   too_far = 0;
-
-  int baseCalc = rank * npoints / size;
-  int finalCalc = (rank + 1) * npoints / size;
 
   /* associa cada ponto a cada centro de particao */
   for (i = baseCalc; i < finalCalc; i++) {
@@ -98,14 +97,12 @@ static void compute_centroids(void) {
   int population;
   has_changed = 0;
 
-  int baseCalc = rank * npoints / size;
-  int finalCalc = (rank + 1) * npoints / size;
-
   for (i = 0; i < ncentroids; i++) {
     /* so executa se particao estiver suja */
-    if (!dirty[i]) continue;
+    if (!dirty_tmp[i]) continue;
     /* zera centro das particoes */
     memset(centroids[i], 0, sizeof(float) * dimension);
+    memset(centroids_tmp[i], 0, sizeof(float) * dimension);
     /* calcula centro da particao */
     population = 0;
     for (j = baseCalc; j < finalCalc; j++) {
@@ -114,20 +111,32 @@ static void compute_centroids(void) {
         centroids[i][k] += data[j][k];
       population++;
     }
+
+    int population_tmp = 0;
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Allreduce(&population, &population_tmp, 1, MPI_INT, MPI_SUM,
+                  MPI_COMM_WORLD);
+    population = population_tmp;
+    MPI_Allreduce(centroids[i], centroids_tmp[i], dimension, MPI_FLOAT,MPI_SUM,
+                  MPI_COMM_WORLD);
+    memcpy(centroids[i], centroids_tmp[i], sizeof(float) * dimension);
+
     if (population > 1) {
       for (k = 0; k < dimension; k++)
-        centroids[i][k] *= 1.0/population; // centroids PRECISA SER ENVIADO
+        centroids[i][k] *= 1.0/population;
     }
+
     has_changed = 1;
   }
   /* todas particoes limpas */
   memset(dirty, 0, ncentroids * sizeof(int));
+  memset(dirty_tmp, 0, ncentroids * sizeof(int));
 }
 //fim calcula centros das particoes
 //-----------------------------------------------------------------------------
 //funcao principal kmeans
 int* kmeans(void) {
-  int i, j, k, l;
+  int i, j, k;
   too_far = 0;
   has_changed = 0;
 
@@ -135,7 +144,15 @@ int* kmeans(void) {
     MPI_Finalize();
     exit (1);
   }
+  if (!(map_tmp  = calloc(npoints, sizeof(int)))) {
+    MPI_Finalize();
+    exit (1);
+  }
   if (!(dirty = malloc(ncentroids*sizeof(int)))) {
+    MPI_Finalize();
+    exit (1);
+  }
+  if (!(dirty_tmp = malloc(ncentroids*sizeof(int)))) {
     MPI_Finalize();
     exit (1);
   }
@@ -143,13 +160,20 @@ int* kmeans(void) {
     MPI_Finalize();
     exit (1);
   }
+  if (!(centroids_tmp = malloc(ncentroids*sizeof(vector_t)))) {
+    MPI_Finalize();
+    exit (1);
+  }
 
-  for (i = 0; i < ncentroids; i++)
+  for (i = 0; i < ncentroids; i++) {
     centroids[i] = malloc(sizeof(float) * dimension);
+    centroids_tmp[i] = malloc(sizeof(float) * dimension);
+  }
   for (i = 0; i < npoints; i++)
     map[i] = -1;                      //!< todos pontos nao mapeados
   for (i = 0; i < ncentroids; i++) {
     dirty[i] = 1;                     //!< particoes estao "sujas"
+    dirty_tmp[i] = 1;
     j = randnum() % npoints;
     for (k = 0; k < dimension; k++)
       centroids[i][k] = data[j][k];   //!< def pontos centros de particoes
@@ -160,68 +184,42 @@ int* kmeans(void) {
     if (map[i] < 0)
       map[i] = randnum() % ncentroids;
 
-  control = 0;
   do {
-    if (control == 1 && has_changed == 1 && rank != 0) {
-      //!< ENVIA CENTROIDS ATUALIZADO!
-    } else if (rank == 0) {
-      //!< RECEBE CENTROIDS, SOMA TUDO E ATUALIZA TODO MUNDO COM ELE
-    }
-
     populate();
     MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Allreduce(dirty, dirty_tmp, ncentroids, MPI_INT, MPI_BOR,
+                  MPI_COMM_WORLD);
+    too_far_tmp = 0;
+    MPI_Allreduce(&too_far, &too_far_tmp, 1, MPI_INT, MPI_BOR, MPI_COMM_WORLD);
+
     compute_centroids();
+  } while (too_far_tmp && has_changed);
 
-    if (rank != 0) {
-      MPI_Send(&too_far, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-      MPI_Send(&has_changed, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    } else {
-      int too_far_tmp;
-      int has_changed_tmp;
-
-      for (i = 0; i < size-1; i++) {
-        MPI_Recv(&too_far_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&has_changed_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        if ((too_far_tmp && has_changed_tmp) || (too_far && has_changed))
-          control = 1;
-      }
-    }
-
-    MPI_Bcast(&control, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-  } while (control);
-
+  /* atualiza map geral */
   if (rank != 0) {
-    MPI_Send(&map, npoints, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    MPI_Send(&rank, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    MPI_Send(map, npoints, MPI_INT, 0, 42, MPI_COMM_WORLD);
   } else {
-    int *map_tmp;
-    int rank_tmp;
+    for (i = 1; i < size; i++) {
+      MPI_Recv(map_tmp, npoints, MPI_INT, i, 42, MPI_COMM_WORLD,
+               MPI_STATUS_IGNORE);
 
-    if (!(map_tmp  = calloc(npoints, sizeof(int)))) {
-      MPI_Finalize();
-      exit (1);
+      int min = i * npoints / size;
+      int max = (i + 1) * npoints / size;
+
+      memcpy(map + min, map_tmp + min, (max - min) * sizeof(int));
     }
-
-    for (i = 0; i < size-1; i++) {
-      MPI_Recv(&map_tmp, npoints, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      MPI_Recv(&rank_tmp, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-      int baseCalc = rank_tmp * npoints / size;
-      int finalCalc = (rank_tmp + 1) * npoints / size;
-
-      for (l = baseCalc; l < finalCalc; l++)
-        map[l] = map_tmp[l];
-    }
-
-    free(map_tmp);
   }
 
-  for (i = 0; i < ncentroids; i++)
+  MPI_Bcast(map, npoints, MPI_INT, 0, MPI_COMM_WORLD);
+
+  for (i = 0; i < ncentroids; i++) {
     free(centroids[i]);
+    free(centroids_tmp[i]);
+  }
+  free(map_tmp);
   free(centroids);
+  free(centroids_tmp);
+  free(dirty_tmp);
   free(dirty);
 
   return map;
@@ -230,7 +228,7 @@ int* kmeans(void) {
 //-----------------------------------------------------------------------------
 //main
 int main(int argc, char **argv) {
-  int i, j, tmp;
+  int i, j;
 
   MPI_Init(&argc, &argv);
 
@@ -263,6 +261,9 @@ int main(int argc, char **argv) {
     for (j = 0; j < dimension; j++)
       data[i][j] = randnum() & 0xffff;
   }
+
+  baseCalc = rank * npoints / size;
+  finalCalc = (rank + 1) * npoints / size;
 
   map = kmeans();
 
