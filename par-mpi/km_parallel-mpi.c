@@ -113,7 +113,6 @@ static void compute_centroids(void) {
     }
 
     int population_tmp = 0;
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Allreduce(&population, &population_tmp, 1, MPI_INT, MPI_SUM,
                   MPI_COMM_WORLD);
     population = population_tmp;
@@ -186,7 +185,6 @@ int* kmeans(void) {
 
   do {
     populate();
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Allreduce(dirty, dirty_tmp, ncentroids, MPI_INT, MPI_BOR,
                   MPI_COMM_WORLD);
     too_far_tmp = 0;
